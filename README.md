@@ -1,10 +1,10 @@
 # QSocket Go
-[![Go Report Card](https://goreportcard.com/badge/github.com/qsocket/qs-netcat)](https://goreportcard.com/report/github.com/qsocket/qs-netcat)
 Go library for qsocket...
 
 
 ###### Documentation 
 [![GoDoc](https://godoc.org/github.com/qsocket/qsocket-go?status.svg)](http://godoc.org/github.com/qsocket/qsocket-go)
+[![Go Report Card](https://goreportcard.com/badge/github.com/qsocket/qs-netcat)](https://goreportcard.com/report/github.com/qsocket/qs-netcat)
 
 ## Example
 Usage is really simple, `qsocket.New()` function simply creates a new quantum socket with given secret, it includes all the functions of standard `net` sockets and also implements `io Read/Write`. After creating a socket you need to dial the QSRN network by calling `Dial*` functions. Simple example below...
