@@ -1,5 +1,7 @@
 # QSocket Go
+[![Go Report Card](https://goreportcard.com/badge/github.com/qsocket/qs-netcat)](https://goreportcard.com/report/github.com/qsocket/qs-netcat)
 Go library for qsocket...
+
 
 ###### Documentation 
 [![GoDoc](https://godoc.org/github.com/qsocket/qsocket-go?status.svg)](http://godoc.org/github.com/qsocket/qsocket-go)
