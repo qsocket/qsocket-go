@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	stream "github.com/EgeBalci/encrypted-stream"
 	"golang.org/x/net/proxy"
 )
 
@@ -72,6 +73,7 @@ var (
 	ErrQSocketSessionEnd   = errors.New("qSocket session has ended")
 	ErrUnexpectedSocket    = errors.New("unexpected socket type")
 	ErrInvalidIdTag        = errors.New("invalid peer ID tag")
+	ErrNoTlsConnection     = errors.New("TLS socket is nil")
 )
 
 // A QSocket structure contains required values
@@ -89,6 +91,7 @@ type QSocket struct {
 	tag        byte
 	conn       net.Conn
 	tlsConn    *tls.Conn
+	encConn    *stream.EncryptedStream
 }
 
 // NewSocket creates a new QSocket structure with the given secret.
@@ -101,6 +104,7 @@ func NewSocket(secret string, certVerify bool) *QSocket {
 		tag:        tag,
 		conn:       nil,
 		tlsConn:    nil,
+		encConn:    nil,
 	}
 }
 
@@ -152,7 +156,37 @@ func (qs *QSocket) Dial() error {
 		}
 	}
 
-	return qs.SendKnockSequence()
+	err = qs.SendKnockSequence()
+	if err != nil {
+		return err
+	}
+
+	return qs.InitE2E()
+}
+
+func (qs *QSocket) InitE2E() error {
+	if qs.tlsConn == nil { // We need a valid TLS connection for initiating PAKE for E2E.
+		return ErrNoTlsConnection
+	}
+
+	sum := sha256.Sum256([]byte(qs.Secret))
+	cipher, err := stream.NewAESGCMCipher(sum[:])
+	if err != nil {
+		return err
+	}
+
+	config := &stream.Config{
+		Cipher:                   cipher,
+		DisableNonceVerification: true, // This is nessesary because we don't really know who (client/server) speaks first on the relay connection.
+	}
+
+	// Create an encrypted stream from a conn.
+	encryptedConn, err := stream.NewEncryptedStream(qs.tlsConn, config)
+	if err != nil {
+		return err
+	}
+	qs.encConn = encryptedConn
+	return nil
 }
 
 // DialProxy tries to create TCP connection to the `QSRN_GATE` using a SOCKS5 proxy.
@@ -239,6 +273,9 @@ func (qs *QSocket) TLS() bool {
 // As Read calls Handshake, in order to prevent indefinite blocking a deadline must be set for both Read and Write before Read is called when the handshake has not yet completed.
 // See SetDeadline, SetReadDeadline, and SetWriteDeadline.
 func (qs *QSocket) Read(b []byte) (int, error) {
+	if qs.encConn != nil {
+		return qs.encConn.Read(b)
+	}
 	if qs.tlsConn != nil {
 		return qs.tlsConn.Read(b)
 	}
@@ -253,6 +290,9 @@ func (qs *QSocket) Read(b []byte) (int, error) {
 // As Write calls Handshake, in order to prevent indefinite blocking a deadline must be set for both Read and Write before Write is called when the handshake has not yet completed.
 // See SetDeadline, SetReadDeadline, and SetWriteDeadline.
 func (qs *QSocket) Write(b []byte) (int, error) {
+	if qs.encConn != nil {
+		return qs.encConn.Write(b)
+	}
 	if qs.tlsConn != nil {
 		return qs.tlsConn.Write(b)
 	}
@@ -264,6 +304,9 @@ func (qs *QSocket) Write(b []byte) (int, error) {
 
 // Close closes the QSocket connection and underlying TCP/TLS connections.
 func (qs *QSocket) Close() {
+	if qs.encConn != nil {
+		qs.encConn.Close()
+	}
 	if qs.tlsConn != nil {
 		qs.tlsConn.Close()
 	}
@@ -272,6 +315,7 @@ func (qs *QSocket) Close() {
 	}
 	qs.conn = nil
 	qs.tlsConn = nil
+	qs.encConn = nil
 }
 
 // chanFromConn creates a channel from a Conn object, and sends everything it
