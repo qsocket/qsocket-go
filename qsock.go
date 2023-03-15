@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"time"
 
-	stream "github.com/EgeBalci/encrypted-stream"
+	stream "github.com/qsocket/encrypted-stream"
 	"golang.org/x/net/proxy"
 )
 
@@ -65,6 +65,8 @@ const (
 	TAG_PEER_SRV = 0x00 // 00000000 => Server
 	// Tag ID for representing client mode connections.
 	TAG_PEER_CLI = 0x01 // 00000001 => Client
+	// =====================================================================
+	SRP_BITS = 4096
 )
 
 var (
@@ -74,6 +76,8 @@ var (
 	ErrUnexpectedSocket    = errors.New("unexpected socket type")
 	ErrInvalidIdTag        = errors.New("invalid peer ID tag")
 	ErrNoTlsConnection     = errors.New("TLS socket is nil")
+	ErrSocketNotConnected  = errors.New("socket is not connected")
+	ErrSrpFailed           = errors.New("SRP auth failed")
 )
 
 // A QSocket structure contains required values
@@ -88,10 +92,11 @@ var (
 type QSocket struct {
 	Secret     string
 	CertVerify bool
-	tag        byte
-	conn       net.Conn
-	tlsConn    *tls.Conn
-	encConn    *stream.EncryptedStream
+	// Internal fields
+	tag     byte
+	conn    net.Conn
+	tlsConn *tls.Conn
+	encConn *stream.EncryptedStream
 }
 
 // NewSocket creates a new QSocket structure with the given secret.
@@ -161,32 +166,17 @@ func (qs *QSocket) Dial() error {
 		return err
 	}
 
-	return qs.InitE2E()
-}
-
-func (qs *QSocket) InitE2E() error {
-	if qs.tlsConn == nil { // We need a valid TLS connection for initiating PAKE for E2E.
-		return ErrNoTlsConnection
+	sessionKey := []byte{}
+	if qs.IsClient() {
+		sessionKey, err = qs.InitClientSRP()
+	} else {
+		sessionKey, err = qs.InitServerSRP()
 	}
-
-	sum := sha256.Sum256([]byte(qs.Secret))
-	cipher, err := stream.NewAESGCMCipher(sum[:])
 	if err != nil {
 		return err
 	}
 
-	config := &stream.Config{
-		Cipher:                   cipher,
-		DisableNonceVerification: true, // This is nessesary because we don't really know who (client/server) speaks first on the relay connection.
-	}
-
-	// Create an encrypted stream from a conn.
-	encryptedConn, err := stream.NewEncryptedStream(qs.tlsConn, config)
-	if err != nil {
-		return err
-	}
-	qs.encConn = encryptedConn
-	return nil
+	return qs.InitE2ECipher(sessionKey)
 }
 
 // DialProxy tries to create TCP connection to the `QSRN_GATE` using a SOCKS5 proxy.
@@ -208,6 +198,11 @@ func (qs *QSocket) DialProxy(proxyAddr string) error {
 	}
 	qs.conn = conn
 	return qs.SendKnockSequence()
+}
+
+// IsClient checks if the QSocket connection is initiated as a client or a server.
+func (qs *QSocket) IsClient() bool {
+	return (qs.tag%2 == 1)
 }
 
 // IsClosed checks if the QSocket connection to the `QSRN_GATE` is ended.
