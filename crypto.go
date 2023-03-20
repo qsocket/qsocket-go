@@ -3,7 +3,6 @@ package qsocket
 import (
 	"crypto/md5"
 	"crypto/sha256"
-	"fmt"
 
 	estream "github.com/qsocket/encrypted-stream"
 	"github.com/qsocket/go-srp"
@@ -133,7 +132,6 @@ func (qs *QSocket) InitServerSRP() ([]byte, error) {
 	}
 
 	if id != ih {
-		fmt.Printf("\n--> %s != %s\n", id, ih)
 		return nil, ErrSrpFailed
 	}
 
