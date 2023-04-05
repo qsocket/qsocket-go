@@ -44,9 +44,9 @@ var (
 // SendKnockSequence sends a knock sequence to the QSRN gate
 // with the socket properties.
 func (qs *QSocket) SendKnockSequence() error {
-	uid := md5.Sum([]byte(qs.Secret))
-	if govalidator.IsUUID(qs.Secret) {
-		u, err := uuid.Parse(qs.Secret)
+	uid := md5.Sum([]byte(qs.secret))
+	if govalidator.IsUUID(qs.secret) {
+		u, err := uuid.Parse(qs.secret)
 		if err != nil {
 			return err
 		}

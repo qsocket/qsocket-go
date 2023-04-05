@@ -78,6 +78,7 @@ var (
 	ErrNoTlsConnection     = errors.New("TLS socket is nil")
 	ErrSocketNotConnected  = errors.New("socket is not connected")
 	ErrSrpFailed           = errors.New("SRP auth failed")
+	ErrSocketInUse         = errors.New("socket already dialed")
 )
 
 // A QSocket structure contains required values
@@ -90,31 +91,35 @@ var (
 // It specifies the operating system, architecture and the type of connection initiated by the peers,
 // the relay server uses these values for optimizing the connection performance.
 type QSocket struct {
-	Secret     string
-	CertVerify bool
-	// Internal fields
-	tag     byte
-	conn    net.Conn
-	tlsConn *tls.Conn
-	encConn *stream.EncryptedStream
+	secret     string
+	certVerify bool
+	e2e        bool
+	tag        byte
+	conn       net.Conn
+	tlsConn    *tls.Conn
+	encConn    *stream.EncryptedStream
 }
 
 // NewSocket creates a new QSocket structure with the given secret.
 // `certVerify` value is used for enabling the certificate validation on TLS connections
-func NewSocket(secret string, certVerify bool) *QSocket {
+func NewSocket(secret string) *QSocket {
 	tag := GetDefaultTag()
 	return &QSocket{
-		Secret:     secret,
-		CertVerify: certVerify,
-		tag:        tag,
-		conn:       nil,
-		tlsConn:    nil,
-		encConn:    nil,
+		secret:  secret,
+		tag:     tag,
+		e2e:     true,
+		conn:    nil,
+		tlsConn: nil,
+		encConn: nil,
 	}
 }
 
 // AddIdTag adds a peer identification tag to the QSocket.
 func (qs *QSocket) AddIdTag(idTag byte) error {
+	if !qs.IsClosed() {
+		return ErrSocketInUse
+	}
+
 	switch idTag {
 	case TAG_PEER_SRV:
 		qs.tag |= idTag
@@ -127,6 +132,26 @@ func (qs *QSocket) AddIdTag(idTag byte) error {
 	default:
 		return ErrInvalidIdTag
 	}
+	return nil
+}
+
+// AddIdTag adds a peer identification tag to the QSocket.
+func (qs *QSocket) SetE2E(v bool) error {
+	if !qs.IsClosed() {
+		return ErrSocketInUse
+	}
+
+	qs.e2e = v
+	return nil
+}
+
+// AddIdTag adds a peer identification tag to the QSocket.
+func (qs *QSocket) SetCertPinning(v bool) error {
+	if !qs.IsClosed() {
+		return ErrSocketInUse
+	}
+
+	qs.certVerify = v
 	return nil
 }
 
@@ -151,7 +176,7 @@ func (qs *QSocket) Dial() error {
 	}
 	qs.tlsConn = conn
 
-	if qs.CertVerify {
+	if qs.certVerify {
 		connState := conn.ConnectionState()
 		for _, peerCert := range connState.PeerCertificates {
 			hash := sha256.Sum256(peerCert.Raw)
@@ -162,7 +187,7 @@ func (qs *QSocket) Dial() error {
 	}
 
 	err = qs.SendKnockSequence()
-	if err != nil {
+	if err != nil || !qs.e2e {
 		return err
 	}
 
@@ -207,13 +232,23 @@ func (qs *QSocket) IsClient() bool {
 
 // IsClosed checks if the QSocket connection to the `QSRN_GATE` is ended.
 func (qs *QSocket) IsClosed() bool {
-	return qs.conn == nil && qs.tlsConn == nil
+	return qs.conn == nil && qs.tlsConn == nil && qs.encConn == nil
+}
+
+// IsTLS checks if the underlying connection is TLS or not.
+func (qs *QSocket) IsTLS() bool {
+	return qs.tlsConn != nil
+}
+
+// IsE2E checks if the underlying connection is E2E encrypted or not.
+func (qs *QSocket) IsE2E() bool {
+	return qs.encConn != nil && qs.e2e
 }
 
 // SetReadDeadline sets the read deadline on the underlying connection.
 // A zero value for t means Read will not time out.
 func (qs *QSocket) SetReadDeadline(t time.Time) error {
-	if qs.tlsConn != nil {
+	if qs.IsTLS() {
 		return qs.tlsConn.SetReadDeadline(t)
 	}
 	if qs.conn != nil {
@@ -227,7 +262,7 @@ func (qs *QSocket) SetReadDeadline(t time.Time) error {
 // After a Write has timed out, the TLS state is corrupt and all future writes will return the same error.
 // Even if write times out, it may return n > 0, indicating that some of the data was successfully written. A zero value for t means Write will not time out.
 func (qs *QSocket) SetWriteDeadline(t time.Time) error {
-	if qs.tlsConn != nil {
+	if qs.IsTLS() {
 		return qs.tlsConn.SetWriteDeadline(t)
 	}
 	if qs.conn != nil {
@@ -238,7 +273,7 @@ func (qs *QSocket) SetWriteDeadline(t time.Time) error {
 
 // RemoteAddr returns the remote network address.
 func (qs *QSocket) RemoteAddr() net.Addr {
-	if qs.tlsConn != nil {
+	if qs.IsTLS() {
 		return qs.tlsConn.RemoteAddr()
 	}
 	if qs.conn != nil {
@@ -249,7 +284,7 @@ func (qs *QSocket) RemoteAddr() net.Addr {
 
 // LocalAddr returns the local network address.
 func (qs *QSocket) LocalAddr() net.Addr {
-	if qs.tlsConn != nil {
+	if qs.IsTLS() {
 		return qs.tlsConn.LocalAddr()
 	}
 	if qs.conn != nil {
@@ -258,20 +293,15 @@ func (qs *QSocket) LocalAddr() net.Addr {
 	return nil
 }
 
-// TLS checks if the underlying connection is TLS or not.
-func (qs *QSocket) TLS() bool {
-	return qs.tlsConn != nil
-}
-
 // Read reads data from the connection.
 //
 // As Read calls Handshake, in order to prevent indefinite blocking a deadline must be set for both Read and Write before Read is called when the handshake has not yet completed.
 // See SetDeadline, SetReadDeadline, and SetWriteDeadline.
 func (qs *QSocket) Read(b []byte) (int, error) {
-	if qs.encConn != nil {
+	if qs.IsE2E() {
 		return qs.encConn.Read(b)
 	}
-	if qs.tlsConn != nil {
+	if qs.IsTLS() {
 		return qs.tlsConn.Read(b)
 	}
 	if qs.conn != nil {
@@ -285,7 +315,7 @@ func (qs *QSocket) Read(b []byte) (int, error) {
 // As Write calls Handshake, in order to prevent indefinite blocking a deadline must be set for both Read and Write before Write is called when the handshake has not yet completed.
 // See SetDeadline, SetReadDeadline, and SetWriteDeadline.
 func (qs *QSocket) Write(b []byte) (int, error) {
-	if qs.encConn != nil {
+	if qs.IsE2E() {
 		return qs.encConn.Write(b)
 	}
 	if qs.tlsConn != nil {

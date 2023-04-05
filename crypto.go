@@ -44,8 +44,8 @@ func (qs *QSocket) InitClientSRP() ([]byte, error) {
 		return nil, err
 	}
 
-	srpUser := md5.Sum([]byte(qs.Secret))
-	srpPass := sha256.Sum256([]byte(qs.Secret))
+	srpUser := md5.Sum([]byte(qs.secret))
+	srpPass := sha256.Sum256([]byte(qs.secret))
 	c, err := s.NewClient(srpUser[:], srpPass[:])
 	if err != nil {
 		return nil, err
@@ -102,8 +102,8 @@ func (qs *QSocket) InitServerSRP() ([]byte, error) {
 		return nil, ErrSocketNotConnected
 	}
 
-	srpUser := md5.Sum([]byte(qs.Secret))
-	srpPass := sha256.Sum256([]byte(qs.Secret))
+	srpUser := md5.Sum([]byte(qs.secret))
+	srpPass := sha256.Sum256([]byte(qs.secret))
 	s, err := srp.New(SRP_BITS)
 	if err != nil {
 		return nil, err
