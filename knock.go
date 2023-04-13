@@ -32,6 +32,8 @@ const (
 	KNOCK_FAIL uint = 0xE1
 	// KNOCK_BUSY is the knock sequence response code indicating busy connection.
 	KNOCK_BUSY uint = 0xE2
+	// KNOCK_IN_USE is the knock sequence response code indicating busy connection.
+	KNOCK_IN_USE uint = 0xE3
 )
 
 var (
@@ -77,6 +79,8 @@ func (qs *QSocket) SendKnockSequence() error {
 		return ErrSocketBusy
 	case byte(KNOCK_FAIL):
 		return ErrConnRefused
+	case byte(KNOCK_IN_USE):
+		return ErrAddressInUse
 	default:
 		return ErrInvalidKnockResponse
 	}

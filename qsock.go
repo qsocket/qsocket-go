@@ -72,13 +72,14 @@ const (
 var (
 	ErrUntrustedCert       = errors.New("certificate fingerprint mismatch")
 	ErrUninitializedSocket = errors.New("socket not initiated")
-	ErrQSocketSessionEnd   = errors.New("qSocket session has ended")
+	ErrQSocketSessionEnd   = errors.New("QSocket session has ended")
 	ErrUnexpectedSocket    = errors.New("unexpected socket type")
 	ErrInvalidIdTag        = errors.New("invalid peer ID tag")
 	ErrNoTlsConnection     = errors.New("TLS socket is nil")
 	ErrSocketNotConnected  = errors.New("socket is not connected")
 	ErrSrpFailed           = errors.New("SRP auth failed")
 	ErrSocketInUse         = errors.New("socket already dialed")
+	ErrAddressInUse        = errors.New("address already in use")
 )
 
 // A QSocket structure contains required values
