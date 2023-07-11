@@ -3,7 +3,6 @@ module github.com/qsocket/qsocket-go
 go 1.19
 
 require (
-	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/google/uuid v1.3.0
 	github.com/qsocket/encrypted-stream v0.0.0-20230315174242-281d81a13266
 	github.com/qsocket/go-srp v0.0.0-20230315175014-fb16dd9247df

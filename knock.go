@@ -2,9 +2,12 @@ package qsocket
 
 import (
 	"crypto/md5"
+	"encoding/base64"
 	"errors"
+	"fmt"
+	"regexp"
+	"strings"
 
-	"github.com/asaskevich/govalidator"
 	"github.com/google/uuid"
 )
 
@@ -22,78 +25,136 @@ const (
 
 	// KNOCK_CHECKSUM_BASE is the constant base value for calculating knock packet checksums.
 	KNOCK_CHECKSUM_BASE = 0xEE
-	// KNOCK_HEADER_B1 is the first magic byte of the knock packet.
-	KNOCK_HEADER_B1 uint = 0xC0
-	// KNOCK_HEADER_B2 is the second magic byte of the knock packet.
-	KNOCK_HEADER_B2 uint = 0xDE
+	CRLF                = "\r\n"
+)
+
+const (
+	// ================ KNOCK RESPONSE CODES ================
 	// KNOCK_SUCCESS is the knock sequence response code indicating successful connection.
-	KNOCK_SUCCESS uint = 0xE0
+	KNOCK_SUCCESS = iota // Protocol switch
 	// KNOCK_FAIL is the knock sequence response code indicating failed connection.
-	KNOCK_FAIL uint = 0xE1
+	KNOCK_FAIL // Unauthorized
 	// KNOCK_BUSY is the knock sequence response code indicating busy connection.
-	KNOCK_BUSY uint = 0xE2
+	KNOCK_BUSY
 	// KNOCK_IN_USE is the knock sequence response code indicating busy connection.
-	KNOCK_IN_USE uint = 0xE3
+	KNOCK_IN_USE
 )
 
 var (
-	ErrInvalidKnockResponse = errors.New("invalid knock response")
-	ErrKnockSendFailed      = errors.New("knock sequence send failed")
-	ErrConnRefused          = errors.New("connection refused (no server listening with given secret)")
-	ErrSocketBusy           = errors.New("socket busy")
+	ErrFailedReadingKnockResponse = errors.New("failed reading knock response")
+	ErrInvalidKnockResponse       = errors.New("invalid knock response")
+	ErrKnockSendFailed            = errors.New("knock sequence send failed")
+	ErrConnRefused                = errors.New("connection refused (no server listening with given secret)")
+	ErrSocketBusy                 = errors.New("socket busy")
+
+	HttpResponseRgx    = regexp.MustCompile(`^HTTP/([0-9]|[0-9]\.[0-9]) ([0-9]{1,3}) [a-z A-Z]+`)
+	WebsocketAcceptRgx = regexp.MustCompile(`Sec-WebSocket-Accept: ([A-Za-z0-9+/]+={0,2})`)
 )
+
+type KnockResponse struct {
+	Success bool
+	Forward bool
+	Data    []byte
+}
+
+// Knock packet is stored inside the "Sec-WebSocket-Key" header of the initial protocol switch request
+
+// GET / HTTP/1.1
+// Sec-WebSocket-Version: 13
+// Sec-WebSocket-Key: fTZr3JpRgUwbDNAMdJvyRg==  <-- base64 encoded knock here
+// Connection: Upgrade
+// Upgrade: websocket
+// Host: dev.qsocket.io
+
+// Knock packet is 20 bytes in size
+// and contains the checksum (1 byte), UUID (16 byte), architecture (1 byte), operating system 1 (byte), peer mode (1 byte)
+// [(CHECKSUM)|(UUID)|(ARCH)|(OS)|(PEER)]
 
 // SendKnockSequence sends a knock sequence to the QSRN gate
 // with the socket properties.
-func (qs *QSocket) SendKnockSequence() error {
-	uid := md5.Sum([]byte(qs.secret))
-	if govalidator.IsUUID(qs.secret) {
-		u, err := uuid.Parse(qs.secret)
-		if err != nil {
-			return err
+func (qs *QSocket) SendKnockSequence() (*KnockResponse, error) {
+	knock, err := qs.NewKnockSequence()
+	if err != nil {
+		return nil, err
+	}
+
+	req := fmt.Sprintf("GET /%s HTTP/1.1\n", qs.forward)
+	req += fmt.Sprintf("Host: %s\n", QSRN_GATE)
+	req += "Sec-WebSocket-Version: 13\n"
+	req += fmt.Sprintf(
+		"Sec-WebSocket-Key: %s\n",
+		base64.StdEncoding.EncodeToString(knock),
+	)
+	req += "Connection: Upgrade\n"
+	req += "Upgrade: websocket\n"
+	req += (CRLF + CRLF)
+
+	n, err := qs.Write([]byte(req))
+	if err != nil {
+		return nil, err
+	}
+	if n != len(req) {
+		return nil, ErrKnockSendFailed
+	}
+
+	buf := make([]byte, 256)
+	_, err = qs.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	return ParseKnockResponse(buf)
+}
+
+func ParseKnockResponse(buf []byte) (*KnockResponse, error) {
+	if !strings.Contains(string(buf), CRLF+CRLF) {
+		return nil, ErrFailedReadingKnockResponse
+	}
+
+	knockResp := new(KnockResponse)
+	if !HttpResponseRgx.Match(buf) {
+		return nil, ErrInvalidKnockResponse
+	}
+
+	resp := HttpResponseRgx.FindStringSubmatch(string(buf))
+	if len(resp) != 3 {
+		return nil, ErrInvalidKnockResponse
+	}
+
+	switch resp[2] { // Status code
+	case "101":
+		knockResp.Success = true
+		// Check if there is a "Sec-WebSocket-Accept" header in the response
+		respData := WebsocketAcceptRgx.FindStringSubmatch(string(buf))
+		if len(respData) == 2 {
+			knockResp.Forward = true
+			data, err := base64.StdEncoding.DecodeString(respData[1])
+			if err != nil {
+				return nil, err
+			}
+			knockResp.Data = data
 		}
-		uid = u
-	}
-	knock, err := NewKnockSequence(uid, qs.tag)
-	if err != nil {
-		return err
-	}
-	n, err := qs.Write(knock)
-	if err != nil {
-		return err
-	}
-	if n != 20 {
-		return ErrKnockSendFailed
-	}
-
-	resp := make([]byte, 1)
-	_, err = qs.Read(resp)
-	if err != nil {
-		return err
-	}
-
-	switch resp[0] {
-	case byte(KNOCK_SUCCESS):
-		return nil
-	case byte(KNOCK_BUSY):
-		return ErrSocketBusy
-	case byte(KNOCK_FAIL):
-		return ErrConnRefused
-	case byte(KNOCK_IN_USE):
-		return ErrAddressInUse
+	case "401":
+		knockResp.Success = false
+	case "409":
+		return nil, ErrAddressInUse
 	default:
-		return ErrInvalidKnockResponse
+		return nil, ErrInvalidKnockResponse
 	}
+	return knockResp, nil
 }
 
 // NewKnockSequence generates a new knock packet with given UUID and tag values.
-func NewKnockSequence(uuid [16]byte, tag byte) ([]byte, error) {
-	knock := []byte{byte(KNOCK_HEADER_B1), byte(KNOCK_HEADER_B2)}
-	checksum := CalcChecksum(uuid[:], KNOCK_CHECKSUM_BASE)
-	knock = append(knock, byte(checksum))
-	knock = append(knock, uuid[:]...)
-	knock = append(knock, tag)
-	return knock, nil
+func (qs *QSocket) NewKnockSequence() ([]byte, error) {
+	uid := md5.Sum([]byte(qs.secret))
+	u, err := uuid.Parse(qs.secret)
+	if err == nil {
+		uid = u
+	}
+
+	knock := append(uid[:], qs.archTag, qs.osTag, qs.peerTag)
+	checksum := CalcChecksum(knock, KNOCK_CHECKSUM_BASE)
+	return append([]byte{checksum}, knock...), nil
 }
 
 // CalcChecksum calculates the modulus based checksum of the given data,
