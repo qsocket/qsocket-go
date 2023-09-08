@@ -36,7 +36,7 @@ const (
 	KNOCK_FAIL // Unauthorized
 	// KNOCK_BUSY is the knock sequence response code indicating busy connection.
 	KNOCK_BUSY
-	// KNOCK_IN_USE is the knock sequence response code indicating busy connection.
+	// KNOCK_IN_USE is the knock sequence response code indicating another server listening with the given secret.
 	KNOCK_IN_USE
 )
 
