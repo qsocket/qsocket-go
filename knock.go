@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
 
 	"github.com/google/uuid"
 )
@@ -104,9 +103,9 @@ func (qs *QSocket) SendKnockSequence() (*KnockResponse, error) {
 }
 
 func ParseKnockResponse(buf []byte) (*KnockResponse, error) {
-	if !strings.Contains(string(buf), CRLF+CRLF) {
-		return nil, ErrFailedReadingKnockResponse
-	}
+	// if !strings.Contains(string(buf), CRLF+CRLF) {
+	// return nil, ErrFailedReadingKnockResponse
+	// }
 
 	knockResp := new(KnockResponse)
 	if !HttpResponseRgx.Match(buf) {
