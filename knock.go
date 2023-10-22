@@ -93,7 +93,7 @@ func (qs *QSocket) SendKnockSequence() (*KnockResponse, error) {
 		return nil, ErrKnockSendFailed
 	}
 
-	buf := make([]byte, 256)
+	buf := make([]byte, 2048)
 	_, err = qs.Read(buf)
 	if err != nil {
 		return nil, err
