@@ -20,6 +20,7 @@ func (qs *QSocket) InitE2ECipher(key []byte) error {
 	}
 
 	config := &estream.Config{
+		MaxChunkSize:             65535,
 		Cipher:                   cipher,
 		DisableNonceVerification: true, // This is nessesary because we don't really know who (client/server) speaks first on the relay connection.
 	}
