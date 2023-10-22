@@ -20,9 +20,6 @@ const (
 	QSRN_GATE_TLS_PORT = 443
 	// QSRN_GATE_PORT Default TCP port for the QSocket gate.
 	QSRN_GATE_PORT = 80
-	// CERT_FINGERPRINT is the static TLS certificate fingerprint for QSRN_GATE.
-	CERT_FINGERPRINT = "32ADEB12BA582C97E157D10699080C1598ECC3793C09D19020EDF51CDC67C145"
-
 	// KNOCK_CHECKSUM_BASE is the constant base value for calculating knock packet checksums.
 	KNOCK_CHECKSUM_BASE = 0xEE
 	CRLF                = "\r\n"

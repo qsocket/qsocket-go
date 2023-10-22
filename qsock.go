@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -26,16 +27,17 @@ const (
 )
 
 var (
-	ErrUntrustedCert       = errors.New("certificate fingerprint mismatch")
-	ErrUninitializedSocket = errors.New("socket not initiated")
-	ErrQSocketSessionEnd   = errors.New("QSocket session has ended")
-	ErrUnexpectedSocket    = errors.New("unexpected socket type")
-	ErrInvalidIdTag        = errors.New("invalid peer ID tag")
-	ErrNoTlsConnection     = errors.New("TLS socket is nil")
-	ErrSocketNotConnected  = errors.New("socket is not connected")
-	ErrSrpFailed           = errors.New("SRP auth failed")
-	ErrSocketInUse         = errors.New("socket already dialed")
-	ErrAddressInUse        = errors.New("address already in use")
+	ErrUntrustedCert          = errors.New("certificate fingerprint mismatch")
+	ErrUninitializedSocket    = errors.New("socket not initiated")
+	ErrQSocketSessionEnd      = errors.New("QSocket session has ended")
+	ErrUnexpectedSocket       = errors.New("unexpected socket type")
+	ErrInvalidIdTag           = errors.New("invalid peer ID tag")
+	ErrNoTlsConnection        = errors.New("TLS socket is nil")
+	ErrSocketNotConnected     = errors.New("socket is not connected")
+	ErrSrpFailed              = errors.New("SRP auth failed")
+	ErrSocketInUse            = errors.New("socket already dialed")
+	ErrAddressInUse           = errors.New("address already in use")
+	ErrInvalidCertFingerprint = errors.New("invalid TLS certificate fingerprint (expected MD5)")
 )
 
 // A QSocket structure contains required values
@@ -48,16 +50,16 @@ var (
 // It specifies the operating system, architecture and the type of connection initiated by the peers,
 // the relay server uses these values for optimizing the connection performance.
 type QSocket struct {
-	secret     string
-	certVerify bool
-	e2e        bool
-	forward    string
-	archTag    byte
-	osTag      byte
-	peerTag    byte
-	conn       net.Conn
-	tlsConn    *tls.Conn
-	encConn    *stream.EncryptedStream
+	secret   string
+	certHash []byte
+	e2e      bool
+	forward  string
+	archTag  byte
+	osTag    byte
+	peerTag  byte
+	conn     net.Conn
+	tlsConn  *tls.Conn
+	encConn  *stream.EncryptedStream
 }
 
 // NewSocket creates a new QSocket structure with the given secret.
@@ -114,12 +116,20 @@ func (qs *QSocket) SetE2E(v bool) error {
 }
 
 // AddIdTag adds a peer identification tag to the QSocket.
-func (qs *QSocket) SetCertPinning(v bool) error {
+func (qs *QSocket) SetCertFingerprint(h string) error {
 	if !qs.IsClosed() {
 		return ErrSocketInUse
 	}
 
-	qs.certVerify = v
+	hash, err := hex.DecodeString(h)
+	if err != nil {
+		return err
+	}
+	if len(hash) != 32 {
+		return ErrInvalidCertFingerprint
+	}
+
+	qs.certHash = hash
 	return nil
 }
 
@@ -154,11 +164,11 @@ func (qs *QSocket) Dial() error {
 	}
 	qs.tlsConn = conn
 
-	if qs.certVerify {
+	if qs.certHash != nil {
 		connState := conn.ConnectionState()
 		for _, peerCert := range connState.PeerCertificates {
 			hash := sha256.Sum256(peerCert.Raw)
-			if !bytes.Equal(hash[0:], []byte(CERT_FINGERPRINT)) {
+			if !bytes.Equal(hash[0:], qs.certHash) {
 				return ErrUntrustedCert
 			}
 		}
