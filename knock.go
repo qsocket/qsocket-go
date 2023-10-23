@@ -83,7 +83,7 @@ func (qs *QSocket) SendKnockSequence() (*KnockResponse, error) {
 	)
 	req += "Connection: Upgrade\n"
 	req += "Upgrade: websocket\n"
-	req += (CRLF + CRLF)
+	req += (CRLF)
 
 	n, err := qs.Write([]byte(req))
 	if err != nil {
@@ -93,7 +93,7 @@ func (qs *QSocket) SendKnockSequence() (*KnockResponse, error) {
 		return nil, ErrKnockSendFailed
 	}
 
-	buf := make([]byte, 2048)
+	buf := make([]byte, 4096)
 	_, err = qs.Read(buf)
 	if err != nil {
 		return nil, err
