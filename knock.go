@@ -28,12 +28,10 @@ const (
 	// ================ KNOCK RESPONSE CODES ================
 	// KNOCK_SUCCESS is the knock sequence response code indicating successful connection.
 	KNOCK_SUCCESS = iota // Protocol switch
-	// KNOCK_FAIL is the knock sequence response code indicating failed connection.
-	KNOCK_FAIL // Unauthorized
-	// KNOCK_BUSY is the knock sequence response code indicating busy connection.
-	KNOCK_BUSY
-	// KNOCK_IN_USE is the knock sequence response code indicating another server listening with the given secret.
-	KNOCK_IN_USE
+	// KNOCK_FAIL is the knock sequence response code indicating no peer is listening with the given secret.
+	KNOCK_FAIL
+	// KNOCK_COLLISION is the knock sequence response code indicating another server is already listening with the given secret.
+	KNOCK_COLLISION
 )
 
 var (
@@ -41,7 +39,6 @@ var (
 	ErrInvalidKnockResponse       = errors.New("invalid knock response")
 	ErrKnockSendFailed            = errors.New("knock sequence send failed")
 	ErrConnRefused                = errors.New("connection refused (no server listening with given secret)")
-	ErrSocketBusy                 = errors.New("socket busy")
 
 	HttpResponseRgx    = regexp.MustCompile(`^HTTP/([0-9]|[0-9]\.[0-9]) ([0-9]{1,3}) [a-z A-Z]+`)
 	WebsocketAcceptRgx = regexp.MustCompile(`Sec-WebSocket-Accept: ([A-Za-z0-9+/]+={0,2})`)
@@ -103,10 +100,6 @@ func (qs *QSocket) SendKnockSequence() (*KnockResponse, error) {
 }
 
 func ParseKnockResponse(buf []byte) (*KnockResponse, error) {
-	// if !strings.Contains(string(buf), CRLF+CRLF) {
-	// return nil, ErrFailedReadingKnockResponse
-	// }
-
 	knockResp := new(KnockResponse)
 	if !HttpResponseRgx.Match(buf) {
 		return nil, ErrInvalidKnockResponse

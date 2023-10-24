@@ -36,7 +36,7 @@ var (
 	ErrSocketNotConnected     = errors.New("socket is not connected")
 	ErrSrpFailed              = errors.New("SRP auth failed")
 	ErrSocketInUse            = errors.New("socket already dialed")
-	ErrAddressInUse           = errors.New("address already in use")
+	ErrAddressInUse           = errors.New("address already in use (server secret collision)")
 	ErrInvalidCertFingerprint = errors.New("invalid TLS certificate fingerprint (expected MD5)")
 )
 
