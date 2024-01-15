@@ -217,7 +217,11 @@ func (qs *QSocket) DialProxy(proxyAddr string) error {
 		return err
 	}
 
-	conn, err := proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", QSRN_GATE, QSRN_GATE_PORT))
+	gate := QSRN_GATE
+	if proxyAddr == "127.0.0.1:9050" {
+		gate = QSRN_TOR_GATE
+	}
+	conn, err := proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, QSRN_GATE_PORT))
 	if err != nil {
 		return err
 	}

@@ -15,6 +15,8 @@ import (
 const (
 	// QSRN_GATE is the static gate address for the QSocket network.
 	QSRN_GATE = "gate.qsocket.io"
+	// QSRN_TOR_GATE is the static ONION address for the QSocket network.
+	QSRN_TOR_GATE = "5cah65fto4tjklhocryenlgti6bfnh4y5szjfvxeqqh3vvw2ff4uq2id.onion"
 	// QSRN_GATE_TLS_PORT Default TLS port for the QSocket gate.
 	QSRN_GATE_TLS_PORT = 443
 	// QSRN_GATE_PORT Default TCP port for the QSocket gate.
