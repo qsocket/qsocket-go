@@ -204,9 +204,10 @@ func (qs *QSocket) Dial() error {
 	return qs.InitE2ECipher(sessionKey)
 }
 
-// DialProxy tries to create TCP connection to the `QSRN_GATE` using a SOCKS5 proxy.
-// `proxyAddr` should contain a valid SOCKS5 proxy.
-func (qs *QSocket) DialProxy(proxyAddr string) error {
+// DialProxy tries to create TCP/TLS connection to the `QSRN_GATE` using a SOCKS5 proxy.
+// `proxyAddr` should contain a valid SOCKS5 proxy whitout the socks5:// schema.
+// `useTls` used for enabling/disabling TLS connection.
+func (qs *QSocket) DialProxy(proxyAddr string, useTls bool) error {
 	proxyDialer, err := proxy.SOCKS5("tcp", proxyAddr, nil,
 		&net.Dialer{
 			Timeout:   10 * time.Second,
@@ -218,14 +219,34 @@ func (qs *QSocket) DialProxy(proxyAddr string) error {
 	}
 
 	gate := QSRN_GATE
+	port := QSRN_GATE_PORT
+	if useTls {
+		port = QSRN_GATE_TLS_PORT
+	}
 	if proxyAddr == "127.0.0.1:9050" {
 		gate = QSRN_TOR_GATE
 	}
-	conn, err := proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, QSRN_GATE_PORT))
+	conn, err := proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, port))
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
-	qs.conn = conn
+
+	if useTls {
+		qs.tlsConn = tls.Client(conn, &tls.Config{InsecureSkipVerify: true})
+		if qs.certHash != nil {
+			connState := qs.tlsConn.ConnectionState()
+			for _, peerCert := range connState.PeerCertificates {
+				hash := sha256.Sum256(peerCert.Raw)
+				if !bytes.Equal(hash[0:], qs.certHash) {
+					return ErrUntrustedCert
+				}
+			}
+		}
+	} else {
+		qs.conn = conn
+	}
+
 	resp, err := qs.SendKnockSequence()
 	if err != nil {
 		return err
