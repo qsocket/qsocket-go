@@ -91,14 +91,8 @@ func (qs *QSocket) AddIdTag(idTag byte) error {
 	}
 
 	switch idTag {
-	case TAG_PEER_SRV:
-		qs.peerTag |= idTag
-	case TAG_PEER_CLI:
-		qs.peerTag |= idTag
-	case TAG_PEER_PROXY:
-		qs.peerTag |= idTag
-	case TAG_PEER_PROXY | TAG_PEER_CLI:
-		qs.peerTag |= idTag
+	case TAG_PEER_SRV, TAG_PEER_CLI, TAG_PEER_PROXY:
+		qs.peerTag = idTag
 	default:
 		return ErrInvalidIdTag
 	}
