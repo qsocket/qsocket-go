@@ -1,10 +1,3 @@
-github.com/google/uuid v1.3.0 h1:t6JiXgmwXMjEs8VusXIJk2BXHsn+wx8BZdTaoZ5fu7I=
-github.com/google/uuid v1.3.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/imdario/mergo v0.3.9/go.mod h1:2EnlNZ0deacrJVfApfmtdGgDfMuh/nq6Ok1EcJh5FfA=
-github.com/imdario/mergo v0.3.16 h1:wwQJbIsHYGMUyLSPrEq1CT16AhnhNJQ51+4fdHUnCl4=
-github.com/imdario/mergo v0.3.16/go.mod h1:WBLT9ZmE3lPoWsEzCh9LPo3TiwVN+ZKEjmz+hD27ysY=
-github.com/qsocket/encrypted-stream v0.0.0-20230315174242-281d81a13266 h1:rVp07UeEx0cnmGCHpudq2sHFNTSjskf3rIE3KGX+8YE=
-github.com/qsocket/encrypted-stream v0.0.0-20230315174242-281d81a13266/go.mod h1:r9kJiti9iVRLoRKwLEuqdxksm38Ek5xRU8mR9+PEB6A=
 github.com/qsocket/encrypted-stream v0.0.0-20231023165659-580d263e71f4 h1:EpdKbGFjc8VPtA8CTwV/F+kqtbuOyqFTky7RipOfcB8=
 github.com/qsocket/encrypted-stream v0.0.0-20231023165659-580d263e71f4/go.mod h1:ev4+HY9osvIdxmY0ZJ78z4QjF2xMz/r0OTEgl30+mV0=
 github.com/qsocket/go-srp v0.0.0-20230315175014-fb16dd9247df h1:PbAZ0Eb2pfUZ/tyNpLq45aYb28VH59EIRKE1zBQRu0g=
@@ -21,6 +14,5 @@ golang.org/x/sys v0.0.0-20190412213103-97732733099d/go.mod h1:h1NjWce9XRLGQEsW7w
 golang.org/x/sys v0.13.0 h1:Af8nKPmuFypiUBjVoU9V20FiaFXOcuZI21p0ycVYYGE=
 golang.org/x/sys v0.13.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
-gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
-gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
-gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+golang.org/x/text v0.14.0 h1:ScX5w1eTa3QqT8oi6+ziP7dTV1S2+ALU0bI+0zXKWiQ=
+golang.org/x/text v0.14.0/go.mod h1:18ZOQIKpY8NJVqYksKHtTdi31H5itFRjB5/qKTNYzSU=

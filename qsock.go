@@ -16,11 +16,9 @@ import (
 
 const (
 	// Tag ID for representing server mode connections.
-	TAG_PEER_SRV = iota // 00000000 => Server
+	PEER_SRV = iota // 00000000 => Server
 	// Tag ID for representing client mode connections.
-	TAG_PEER_CLI
-	// TAG_PEER_PROXY Tag ID for representing proxy mode connections.
-	TAG_PEER_PROXY
+	PEER_CLI
 	// =====================================================================
 
 	SRP_BITS = 4096
@@ -29,7 +27,7 @@ const (
 var (
 	ErrUntrustedCert          = errors.New("certificate fingerprint mismatch")
 	ErrUninitializedSocket    = errors.New("socket not initiated")
-	ErrQSocketSessionEnd      = errors.New("QSocket session has ended")
+	ErrQSocketSessionEnd      = errors.New("qsocket session has ended")
 	ErrUnexpectedSocket       = errors.New("unexpected socket type")
 	ErrInvalidIdTag           = errors.New("invalid peer ID tag")
 	ErrNoTlsConnection        = errors.New("TLS socket is nil")
@@ -37,7 +35,9 @@ var (
 	ErrSrpFailed              = errors.New("SRP auth failed")
 	ErrSocketInUse            = errors.New("socket already dialed")
 	ErrAddressInUse           = errors.New("address already in use (server secret collision)")
-	ErrInvalidCertFingerprint = errors.New("invalid TLS certificate fingerprint (expected MD5)")
+	ErrInvalidCertFingerprint = errors.New("invalid TLS certificate fingerprint")
+	//
+	TOR_MODE = false
 )
 
 // A QSocket structure contains required values
@@ -51,28 +51,36 @@ var (
 // the relay server uses these values for optimizing the connection performance.
 type QSocket struct {
 	secret   string
+	command  string
 	certHash []byte
 	e2e      bool
 	forward  string
-	archTag  byte
-	osTag    byte
 	peerTag  byte
-	conn     net.Conn
-	tlsConn  *tls.Conn
-	encConn  *stream.EncryptedStream
+	termSize *ttySize
+
+	conn        net.Conn
+	tlsConn     *tls.Conn
+	encConn     *stream.EncryptedStream
+	proxyDialer proxy.Dialer
+}
+
+type ttySize struct {
+	Rows int
+	Cols int
 }
 
 // NewSocket creates a new QSocket structure with the given secret.
 // `certVerify` value is used for enabling the certificate validation on TLS connections
 func NewSocket(secret string) *QSocket {
 	return &QSocket{
-		secret:  secret,
-		osTag:   GetOsTag(),
-		archTag: GetArchTag(),
-		e2e:     true,
-		conn:    nil,
-		tlsConn: nil,
-		encConn: nil,
+		secret:      secret,
+		command:     "",
+		e2e:         true,
+		conn:        nil,
+		tlsConn:     nil,
+		encConn:     nil,
+		proxyDialer: nil,
+		termSize:    nil,
 	}
 }
 
@@ -85,13 +93,13 @@ func (qs *QSocket) GetForwardAddr() string {
 }
 
 // AddIdTag adds a peer identification tag to the QSocket.
-func (qs *QSocket) AddIdTag(idTag byte) error {
+func (qs *QSocket) SetIdTag(idTag byte) error {
 	if !qs.IsClosed() {
 		return ErrSocketInUse
 	}
 
 	switch idTag {
-	case TAG_PEER_SRV, TAG_PEER_CLI, TAG_PEER_PROXY:
+	case PEER_SRV, PEER_CLI:
 		qs.peerTag = idTag
 	default:
 		return ErrInvalidIdTag
@@ -127,82 +135,17 @@ func (qs *QSocket) SetCertFingerprint(h string) error {
 	return nil
 }
 
-// DialTCP creates a TCP connection to the `QSRN_GATE` on `QSRN_GATE_PORT`.
-func (qs *QSocket) DialTCP() error {
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", QSRN_GATE, QSRN_GATE_PORT))
-	if err != nil {
-		return err
-	}
-	qs.conn = conn
-	resp, err := qs.SendKnockSequence()
-	if err != nil {
-		return err
-	}
-	if resp.Success {
-		if resp.Forward {
-			qs.forward = string(resp.Data)
-		}
-		return nil
-	}
-	return ErrConnRefused
-}
-
-// Dial creates a TLS connection to the `QSRN_GATE` on `QSRN_GATE_TLS_PORT`.
-// Based on the `VerifyCert` parameter, certificate fingerprint validation (a.k.a. SSL pinning)
-// will be performed after establishing the TLS connection.
-func (qs *QSocket) Dial() error {
-	conf := &tls.Config{InsecureSkipVerify: true}
-	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", QSRN_GATE, QSRN_GATE_TLS_PORT), conf)
-	if err != nil {
-		return err
-	}
-	qs.tlsConn = conn
-
-	if qs.certHash != nil {
-		connState := conn.ConnectionState()
-		for _, peerCert := range connState.PeerCertificates {
-			hash := sha256.Sum256(peerCert.Raw)
-			if !bytes.Equal(hash[0:], qs.certHash) {
-				return ErrUntrustedCert
-			}
-		}
+// AddIdTag adds a peer identification tag to the QSocket.
+func (qs *QSocket) SetProxy(proxyAddr string) error {
+	if !qs.IsClosed() {
+		return ErrSocketInUse
 	}
 
-	resp, err := qs.SendKnockSequence()
-	if err != nil {
-		return err
+	if proxyAddr == "127.0.0.1:9050" {
+		TOR_MODE = true
 	}
 
-	if !resp.Success {
-		return ErrConnRefused
-	}
-
-	if resp.Forward && qs.IsServer() {
-		qs.forward = string(resp.Data)
-	}
-
-	if !qs.e2e {
-		return nil
-	}
-
-	sessionKey := []byte{}
-	if qs.IsClient() {
-		sessionKey, err = qs.InitClientSRP()
-	} else {
-		sessionKey, err = qs.InitServerSRP()
-	}
-	if err != nil {
-		return err
-	}
-
-	return qs.InitE2ECipher(sessionKey)
-}
-
-// DialProxy tries to create TCP/TLS connection to the `QSRN_GATE` using a SOCKS5 proxy.
-// `proxyAddr` should contain a valid SOCKS5 proxy whitout the socks5:// schema.
-// `useTls` used for enabling/disabling TLS connection.
-func (qs *QSocket) DialProxy(proxyAddr string, useTls bool) error {
-	proxyDialer, err := proxy.SOCKS5("tcp", proxyAddr, nil,
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil,
 		&net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 10 * time.Second,
@@ -211,64 +154,127 @@ func (qs *QSocket) DialProxy(proxyAddr string, useTls bool) error {
 	if err != nil {
 		return err
 	}
+	qs.proxyDialer = dialer
+	return nil
+}
 
-	gate := QSRN_GATE
-	port := QSRN_GATE_PORT
-	if useTls {
-		port = QSRN_GATE_TLS_PORT
-	}
-	if proxyAddr == "127.0.0.1:9050" {
-		gate = QSRN_TOR_GATE
-	}
-	conn, err := proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, port))
+// DialTCP creates a TCP connection to the `QSRN_GATE` on `QSRN_GATE_PORT`.
+func (qs *QSocket) DialTCP() error {
+	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", QSRN_GATE, QSRN_GATE_PORT))
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
+	qs.conn = conn
 
-	if useTls {
-		qs.tlsConn = tls.Client(conn, &tls.Config{InsecureSkipVerify: true})
-		if qs.certHash != nil {
-			connState := qs.tlsConn.ConnectionState()
-			for _, peerCert := range connState.PeerCertificates {
-				hash := sha256.Sum256(peerCert.Raw)
-				if !bytes.Equal(hash[0:], qs.certHash) {
-					return ErrUntrustedCert
-				}
-			}
+	if qs.proxyDialer != nil {
+		gate := QSRN_GATE
+		if TOR_MODE {
+			gate = QSRN_TOR_GATE
 		}
+		pConn, err := qs.proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, QSRN_GATE_PORT))
+		if err != nil {
+			return err
+		}
+		qs.conn = pConn
+	}
+
+	return qs.InitiateKnockSequence()
+}
+
+// Dial creates a TLS connection to the `QSRN_GATE` on `QSRN_GATE_TLS_PORT`.
+// Based on the `VerifyCert` parameter, certificate fingerprint validation (a.k.a. SSL pinning)
+// will be performed after establishing the TLS connection.
+func (qs *QSocket) Dial() error {
+	if qs.proxyDialer != nil {
+		gate := QSRN_GATE
+		if TOR_MODE {
+			gate = QSRN_TOR_GATE
+		}
+		pConn, err := qs.proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, QSRN_GATE_TLS_PORT))
+		if err != nil {
+			return err
+		}
+		qs.conn = pConn
 	} else {
+		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", QSRN_GATE, QSRN_GATE_TLS_PORT))
+		if err != nil {
+			return err
+		}
 		qs.conn = conn
 	}
+	qs.tlsConn = tls.Client(qs.conn, &tls.Config{InsecureSkipVerify: true})
 
-	resp, err := qs.SendKnockSequence()
+	err := qs.VerifyTlsCertificate()
 	if err != nil {
 		return err
 	}
 
-	if !resp.Success {
-		return ErrConnRefused
+	return qs.InitiateKnockSequence()
+}
+
+func (qs *QSocket) VerifyTlsCertificate() error {
+	if qs.IsClosed() {
+		return ErrSocketNotConnected
 	}
 
-	if resp.Forward {
-		qs.forward = string(resp.Data)
+	if qs.tlsConn == nil {
+		return ErrNoTlsConnection
 	}
 
-	if !qs.e2e {
+	if qs.certHash == nil {
 		return nil
 	}
 
-	sessionKey := []byte{}
-	if qs.IsClient() {
-		sessionKey, err = qs.InitClientSRP()
-	} else {
-		sessionKey, err = qs.InitServerSRP()
+	connState := qs.tlsConn.ConnectionState()
+	for _, peerCert := range connState.PeerCertificates {
+		hash := sha256.Sum256(peerCert.Raw)
+		if !bytes.Equal(hash[0:], qs.certHash) {
+			return ErrUntrustedCert
+		}
 	}
+	return nil
+}
+
+func (qs *QSocket) InitiateKnockSequence() error {
+	if qs.IsClosed() {
+		return ErrSocketNotConnected
+	}
+
+	err := qs.DoWsProtocolSwitch()
 	if err != nil {
 		return err
 	}
 
-	return qs.InitE2ECipher(sessionKey)
+	if qs.e2e {
+		sessionKey := []byte{}
+		if qs.IsClient() {
+			sessionKey, err = qs.InitClientSRP()
+		} else {
+			sessionKey, err = qs.InitServerSRP()
+		}
+		if err != nil {
+			return err
+		}
+
+		err = qs.InitE2ECipher(sessionKey)
+		if err != nil {
+			return err
+		}
+	}
+
+	if !qs.IsClient() {
+		// recv socket specs
+		specs, err := qs.RecvSocketSpecs()
+		if err != nil {
+			return err
+		}
+		qs.command = specs.Command
+		qs.forward = specs.ForwardAddr
+		qs.termSize = &specs.TermSize
+	}
+
+	// send socket specs
+	return qs.SendSocketSpecs()
 }
 
 // IsClient checks if the QSocket connection is initiated as a client or a server.
