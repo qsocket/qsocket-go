@@ -25,21 +25,14 @@ const (
 	CHECKSUM_BASE = 0xEE
 	URI_CHARSET   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
 	CRLF          = "\r\n"
-
-	// ================ KNOCK RESPONSE CODES ================
-	// KNOCK_SUCCESS is the knock sequence response code indicating successful connection.
-	KNOCK_SUCCESS = iota // Protocol switch
-	// KNOCK_FAIL is the knock sequence response code indicating no peer is listening with the given secret.
-	KNOCK_FAIL
-	// KNOCK_COLLISION is the knock sequence response code indicating another server is already listening with the given secret.
-	KNOCK_COLLISION
 )
 
 var (
-	ErrFailedReadingProtocolSwitchResponse = errors.New("failed reading protocol switch response")
-	ErrInvalidProtocolSwitchResponse       = errors.New("invalid protocol switch response")
-	ErrProtocolSwitchFailed                = errors.New("websocket protocol switch failed")
-	ErrConnRefused                         = errors.New("connection refused (no server listening with given secret)")
+	ErrFailedReadingProtocolSwitchResponse = errors.New("Failed reading protocol switch response.")
+	ErrInvalidProtocolSwitchResponse       = errors.New("Invalid protocol switch response.")
+	ErrProtocolSwitchFailed                = errors.New("Websocket protocol switch failed.")
+	ErrServerCollision                     = errors.New("Address already in use. (server secret collision)")
+	ErrPeerNotFound                        = errors.New("Connection refused. (no server listening with given secret)")
 
 	HttpResponseRgx    = regexp.MustCompile(`^HTTP/([0-9]|[0-9]\.[0-9]) ([0-9]{1,3}) [a-z A-Z]+`)
 	WebsocketAcceptRgx = regexp.MustCompile(`Sec-WebSocket-Accept: ([A-Za-z0-9+/]+={0,2})`)
@@ -48,12 +41,13 @@ var (
 type SocketSpecs struct {
 	Command     string
 	ForwardAddr string
-	TermSize    ttySize
+	TermSize    Winsize
 }
 
-// GET / HTTP/1.1
+// GET /[RANDOM-URI] HTTP/1.1
 // Sec-WebSocket-Version: 13
 // Sec-WebSocket-Key: fTZr3JpRgUwbDNAMdJvyRg==  <-- base64 encoded UID here
+// User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/524.81 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/524.81
 // Connection: Upgrade
 // Upgrade: websocket
 // Host: dev.qsocket.io
@@ -75,8 +69,8 @@ func (qs *QSocket) DoWsProtocolSwitch() error {
 		base64.StdEncoding.EncodeToString(uid[:]),
 	)
 	req += "Connection: Upgrade\n"
-	req += "Upgrade: websocket\n"
-	req += (CRLF)
+	req += "Upgrade: websocket"
+	req += (CRLF + CRLF)
 
 	n, err := qs.Write([]byte(req))
 	if err != nil {
@@ -87,16 +81,16 @@ func (qs *QSocket) DoWsProtocolSwitch() error {
 	}
 
 	buf := make([]byte, 4096)
-	_, err = qs.Read(buf)
+	n, err = qs.Read(buf)
 	if err != nil {
 		return err
 	}
 
-	if !HttpResponseRgx.Match(buf) {
+	if !HttpResponseRgx.Match(buf[:n]) {
 		return ErrInvalidProtocolSwitchResponse
 	}
 
-	resp := HttpResponseRgx.FindStringSubmatch(string(buf))
+	resp := HttpResponseRgx.FindStringSubmatch(string(buf[:n]))
 	if len(resp) != 3 {
 		return ErrInvalidProtocolSwitchResponse
 	}
@@ -104,13 +98,47 @@ func (qs *QSocket) DoWsProtocolSwitch() error {
 	switch resp[2] { // Status code
 	case "101":
 		return nil
-	case "401":
-		return ErrConnRefused
+	case "404":
+		return ErrPeerNotFound
 	case "409":
-		return ErrAddressInUse
+		return ErrServerCollision
 	default:
 		return ErrInvalidProtocolSwitchResponse
 	}
+}
+
+func (qs *QSocket) InitiateKnockSequence() error {
+	if qs.IsClosed() {
+		return ErrSocketNotConnected
+	}
+
+	err := qs.DoWsProtocolSwitch()
+	if err != nil {
+		return err
+	}
+
+	if qs.e2e {
+		sessionKey := []byte{}
+		if qs.IsClient() {
+			sessionKey, err = qs.InitClientSRP()
+		} else {
+			sessionKey, err = qs.InitServerSRP()
+		}
+		if err != nil {
+			return err
+		}
+
+		err = qs.InitE2ECipher(sessionKey)
+		if err != nil {
+			return err
+		}
+	}
+	if !qs.IsClient() {
+		return qs.RecvSocketSpecs()
+	}
+
+	// send socket specs
+	return qs.SendSocketSpecs()
 }
 
 func (qs *QSocket) SendSocketSpecs() error {
@@ -133,22 +161,25 @@ func (qs *QSocket) SendSocketSpecs() error {
 	return err
 }
 
-func (qs *QSocket) RecvSocketSpecs() (*SocketSpecs, error) {
+func (qs *QSocket) RecvSocketSpecs() error {
 	if qs.IsClosed() {
-		return nil, ErrSocketNotConnected
+		return ErrSocketNotConnected
 	}
 	specs := new(SocketSpecs)
 	data := make([]byte, 512)
 	n, err := qs.Read(data)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	buf := bytes.NewBuffer(data[:n])
 	dec := gob.NewDecoder(buf)
 
 	if err := dec.Decode(specs); err != nil {
-		return nil, err
+		return err
 	}
 
-	return specs, nil
+	qs.command = specs.Command
+	qs.forward = specs.ForwardAddr
+	qs.termSize = &specs.TermSize
+	return nil
 }

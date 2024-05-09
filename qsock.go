@@ -25,17 +25,16 @@ const (
 )
 
 var (
-	ErrUntrustedCert          = errors.New("certificate fingerprint mismatch")
-	ErrUninitializedSocket    = errors.New("socket not initiated")
-	ErrQSocketSessionEnd      = errors.New("qsocket session has ended")
-	ErrUnexpectedSocket       = errors.New("unexpected socket type")
-	ErrInvalidIdTag           = errors.New("invalid peer ID tag")
-	ErrNoTlsConnection        = errors.New("TLS socket is nil")
-	ErrSocketNotConnected     = errors.New("socket is not connected")
-	ErrSrpFailed              = errors.New("SRP auth failed")
-	ErrSocketInUse            = errors.New("socket already dialed")
-	ErrAddressInUse           = errors.New("address already in use (server secret collision)")
-	ErrInvalidCertFingerprint = errors.New("invalid TLS certificate fingerprint")
+	ErrUntrustedCert          = errors.New("Certificate fingerprint mismatch!")
+	ErrUninitializedSocket    = errors.New("Socket not initiated,")
+	ErrQSocketSessionEnd      = errors.New("QSocket session has ended.")
+	ErrUnexpectedSocket       = errors.New("Unexpected socket type.")
+	ErrInvalidIdTag           = errors.New("Invalid peer ID tag.")
+	ErrNoTlsConnection        = errors.New("TLS socket is nil.")
+	ErrSocketNotConnected     = errors.New("Socket is not connected.")
+	ErrSrpFailed              = errors.New("SRP auth failed.")
+	ErrSocketInUse            = errors.New("Socket already dialed.")
+	ErrInvalidCertFingerprint = errors.New("Invalid TLS certificate fingerprint.")
 	//
 	TOR_MODE = false
 )
@@ -56,7 +55,7 @@ type QSocket struct {
 	e2e      bool
 	forward  string
 	peerTag  byte
-	termSize *ttySize
+	termSize *Winsize
 
 	conn        net.Conn
 	tlsConn     *tls.Conn
@@ -64,9 +63,12 @@ type QSocket struct {
 	proxyDialer proxy.Dialer
 }
 
-type ttySize struct {
-	Rows int
-	Cols int
+// Winsize describes the terminal window size
+type Winsize struct {
+	Rows uint16 // ws_row: Number of rows (in cells)
+	Cols uint16 // ws_col: Number of columns (in cells)
+	X    uint16 // ws_xpixel: Width in pixels
+	Y    uint16 // ws_ypixel: Height in pixels
 }
 
 // NewSocket creates a new QSocket structure with the given secret.
@@ -90,6 +92,14 @@ func (qs *QSocket) SetForwardAddr(addr string) {
 
 func (qs *QSocket) GetForwardAddr() string {
 	return qs.forward
+}
+
+func (qs *QSocket) SetTermSize(ptySize *Winsize) {
+	qs.termSize = ptySize
+}
+
+func (qs *QSocket) GetTermSize() *Winsize {
+	return qs.termSize
 }
 
 // AddIdTag adds a peer identification tag to the QSocket.
@@ -235,51 +245,9 @@ func (qs *QSocket) VerifyTlsCertificate() error {
 	return nil
 }
 
-func (qs *QSocket) InitiateKnockSequence() error {
-	if qs.IsClosed() {
-		return ErrSocketNotConnected
-	}
-
-	err := qs.DoWsProtocolSwitch()
-	if err != nil {
-		return err
-	}
-
-	if qs.e2e {
-		sessionKey := []byte{}
-		if qs.IsClient() {
-			sessionKey, err = qs.InitClientSRP()
-		} else {
-			sessionKey, err = qs.InitServerSRP()
-		}
-		if err != nil {
-			return err
-		}
-
-		err = qs.InitE2ECipher(sessionKey)
-		if err != nil {
-			return err
-		}
-	}
-
-	if !qs.IsClient() {
-		// recv socket specs
-		specs, err := qs.RecvSocketSpecs()
-		if err != nil {
-			return err
-		}
-		qs.command = specs.Command
-		qs.forward = specs.ForwardAddr
-		qs.termSize = &specs.TermSize
-	}
-
-	// send socket specs
-	return qs.SendSocketSpecs()
-}
-
 // IsClient checks if the QSocket connection is initiated as a client or a server.
 func (qs *QSocket) IsClient() bool {
-	return (qs.peerTag%2 == 1)
+	return qs.peerTag == PEER_CLI
 }
 
 // IsClient checks if the QSocket connection is initiated as a client or a server.
