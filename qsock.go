@@ -50,12 +50,9 @@ var (
 // the relay server uses these values for optimizing the connection performance.
 type QSocket struct {
 	secret   string
-	command  string
 	certHash []byte
 	e2e      bool
-	forward  string
 	peerTag  byte
-	termSize *Winsize
 
 	conn        net.Conn
 	tlsConn     *tls.Conn
@@ -63,43 +60,17 @@ type QSocket struct {
 	proxyDialer proxy.Dialer
 }
 
-// Winsize describes the terminal window size
-type Winsize struct {
-	Rows uint16 // ws_row: Number of rows (in cells)
-	Cols uint16 // ws_col: Number of columns (in cells)
-	X    uint16 // ws_xpixel: Width in pixels
-	Y    uint16 // ws_ypixel: Height in pixels
-}
-
 // NewSocket creates a new QSocket structure with the given secret.
 // `certVerify` value is used for enabling the certificate validation on TLS connections
 func NewSocket(secret string) *QSocket {
 	return &QSocket{
 		secret:      secret,
-		command:     "",
 		e2e:         true,
 		conn:        nil,
 		tlsConn:     nil,
 		encConn:     nil,
 		proxyDialer: nil,
-		termSize:    nil,
 	}
-}
-
-func (qs *QSocket) SetForwardAddr(addr string) {
-	qs.forward = addr
-}
-
-func (qs *QSocket) GetForwardAddr() string {
-	return qs.forward
-}
-
-func (qs *QSocket) SetTermSize(ptySize *Winsize) {
-	qs.termSize = ptySize
-}
-
-func (qs *QSocket) GetTermSize() *Winsize {
-	return qs.termSize
 }
 
 // AddIdTag adds a peer identification tag to the QSocket.

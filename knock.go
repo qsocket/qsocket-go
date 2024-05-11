@@ -1,10 +1,8 @@
 package qsocket
 
 import (
-	"bytes"
 	"crypto/md5"
 	"encoding/base64"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"regexp"
@@ -37,12 +35,6 @@ var (
 	HttpResponseRgx    = regexp.MustCompile(`^HTTP/([0-9]|[0-9]\.[0-9]) ([0-9]{1,3}) [a-z A-Z]+`)
 	WebsocketAcceptRgx = regexp.MustCompile(`Sec-WebSocket-Accept: ([A-Za-z0-9+/]+={0,2})`)
 )
-
-type SocketSpecs struct {
-	Command     string
-	ForwardAddr string
-	TermSize    Winsize
-}
 
 // GET /[RANDOM-URI] HTTP/1.1
 // Sec-WebSocket-Version: 13
@@ -133,53 +125,5 @@ func (qs *QSocket) InitiateKnockSequence() error {
 			return err
 		}
 	}
-	if !qs.IsClient() {
-		return qs.RecvSocketSpecs()
-	}
-
-	// send socket specs
-	return qs.SendSocketSpecs()
-}
-
-func (qs *QSocket) SendSocketSpecs() error {
-	if qs.IsClosed() {
-		return ErrSocketNotConnected
-	}
-	specs := SocketSpecs{
-		Command:     qs.command,
-		ForwardAddr: qs.forward,
-		TermSize:    *qs.termSize,
-	}
-	buf := bytes.Buffer{}
-	enc := gob.NewEncoder(&buf)
-
-	if err := enc.Encode(specs); err != nil {
-		return err
-	}
-
-	_, err := qs.Write(buf.Bytes())
-	return err
-}
-
-func (qs *QSocket) RecvSocketSpecs() error {
-	if qs.IsClosed() {
-		return ErrSocketNotConnected
-	}
-	specs := new(SocketSpecs)
-	data := make([]byte, 512)
-	n, err := qs.Read(data)
-	if err != nil {
-		return err
-	}
-	buf := bytes.NewBuffer(data[:n])
-	dec := gob.NewDecoder(buf)
-
-	if err := dec.Decode(specs); err != nil {
-		return err
-	}
-
-	qs.command = specs.Command
-	qs.forward = specs.ForwardAddr
-	qs.termSize = &specs.TermSize
 	return nil
 }
