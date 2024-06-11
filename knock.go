@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // Some global constants for
@@ -31,6 +32,7 @@ var (
 	ErrProtocolSwitchFailed                = errors.New("Websocket protocol switch failed.")
 	ErrServerCollision                     = errors.New("Address already in use. (server secret collision)")
 	ErrPeerNotFound                        = errors.New("Connection refused. (no server listening with given secret)")
+	ErrUpgradeRequired                     = errors.New("Protocol upgrade required!")
 
 	HttpResponseRgx    = regexp.MustCompile(`^HTTP/([0-9]|[0-9]\.[0-9]) ([0-9]{1,3}) [a-z A-Z]+`)
 	WebsocketAcceptRgx = regexp.MustCompile(`Sec-WebSocket-Accept: ([A-Za-z0-9+/]+={0,2})`)
@@ -94,6 +96,12 @@ func (qs *QSocket) DoWsProtocolSwitch() error {
 		return ErrPeerNotFound
 	case "409":
 		return ErrServerCollision
+	case "426":
+		relayMessage := strings.Split(string(buf[:n]), "\n\n")
+		if len(relayMessage) > 1 {
+			return fmt.Errorf("%s", relayMessage[1])
+		}
+		return ErrUpgradeRequired
 	default:
 		return ErrInvalidProtocolSwitchResponse
 	}
