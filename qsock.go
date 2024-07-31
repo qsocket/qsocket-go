@@ -140,57 +140,38 @@ func (qs *QSocket) SetProxy(proxyAddr string) error {
 	return nil
 }
 
-// DialTCP creates a TCP connection to the `QSRN_GATE` on `QSRN_GATE_PORT`.
-func (qs *QSocket) DialTCP() error {
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", QSRN_GATE, QSRN_GATE_PORT))
-	if err != nil {
-		return err
-	}
-	qs.conn = conn
-
-	if qs.proxyDialer != nil {
-		gate := QSRN_GATE
-		if TOR_MODE {
-			gate = QSRN_TOR_GATE
-		}
-		pConn, err := qs.proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, QSRN_GATE_PORT))
-		if err != nil {
-			return err
-		}
-		qs.conn = pConn
-	}
-
-	return qs.InitiateKnockSequence()
-}
-
 // Dial creates a TLS connection to the `QSRN_GATE` on `QSRN_GATE_TLS_PORT`.
 // Based on the `VerifyCert` parameter, certificate fingerprint validation (a.k.a. SSL pinning)
 // will be performed after establishing the TLS connection.
-func (qs *QSocket) Dial() error {
+func (qs *QSocket) Dial(useTls bool) error {
+	port := QSRN_GATE_PORT
+	if useTls {
+		port = QSRN_GATE_TLS_PORT
+	}
 	if qs.proxyDialer != nil {
 		gate := QSRN_GATE
 		if TOR_MODE {
 			gate = QSRN_TOR_GATE
 		}
-		pConn, err := qs.proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, QSRN_GATE_TLS_PORT))
+		pConn, err := qs.proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, port))
 		if err != nil {
 			return err
 		}
 		qs.conn = pConn
 	} else {
-		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", QSRN_GATE, QSRN_GATE_TLS_PORT))
+		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", QSRN_GATE, port))
 		if err != nil {
 			return err
 		}
 		qs.conn = conn
 	}
-	qs.tlsConn = tls.Client(qs.conn, &tls.Config{InsecureSkipVerify: true})
-
-	err := qs.VerifyTlsCertificate()
-	if err != nil {
-		return err
+	if useTls {
+		qs.tlsConn = tls.Client(qs.conn, &tls.Config{InsecureSkipVerify: true})
+		err := qs.VerifyTlsCertificate()
+		if err != nil {
+			return err
+		}
 	}
-
 	return qs.InitiateKnockSequence()
 }
 
