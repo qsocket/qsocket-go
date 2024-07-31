@@ -7,8 +7,25 @@ import (
 )
 
 func TestNewChecksumUri(t *testing.T) {
-	t.Logf("-> Server: %s\n", qsocket.NewChecksumUri(qsocket.PEER_SRV))
-	t.Logf("-> Client: %s\n", qsocket.NewChecksumUri(qsocket.PEER_CLI))
+	cliUri := qsocket.NewChecksumUri(qsocket.Client)
+	srvUri := qsocket.NewChecksumUri(qsocket.Server)
+	t.Logf("-> Server: %s\n", srvUri)
+	t.Logf("-> Client: %s\n", cliUri)
+
+	if qsocket.CalcChecksum(
+		[]byte(cliUri),
+		qsocket.CHECKSUM_BASE,
+	) != byte(qsocket.Client) {
+		t.Errorf("qsocket.Client != %s", cliUri)
+	}
+
+	if qsocket.CalcChecksum(
+		[]byte(srvUri),
+		qsocket.CHECKSUM_BASE,
+	) != byte(qsocket.Server) {
+		t.Errorf("qsocket.Server != %s", srvUri)
+	}
+
 }
 
 func TestGetDeviceUserAgent(t *testing.T) {
