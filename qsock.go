@@ -14,8 +14,6 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-type SocketType byte
-
 const (
 	// Tag ID for representing server mode connections.
 	Server SocketType = iota // 00000000 => Server
@@ -40,6 +38,8 @@ var (
 	//
 	TOR_MODE = false
 )
+
+type SocketType byte
 
 // A QSocket structure contains required values
 // for performing a knock sequence with the QSRN gate.

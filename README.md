@@ -29,4 +29,4 @@ Usage is really simple, `qsocket.New()` function simply creates a new quantum so
 
 ``` 
 
-After dialing the QSRN, socket is ready for read/write operations. 
+After dialing the QSRN, socket is ready for read/write operations. Check [here](https://github.com/qsocket/qsocket-go/tree/dev/examples) and [qs-netcat](https://github.com/qsocket/qs-netcat) for more usage examples. 
