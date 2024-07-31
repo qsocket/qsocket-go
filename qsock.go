@@ -14,8 +14,6 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-type SocketType byte
-
 const (
 	// Tag ID for representing server mode connections.
 	Server SocketType = iota // 00000000 => Server
@@ -40,6 +38,8 @@ var (
 	//
 	TOR_MODE = false
 )
+
+type SocketType byte
 
 // A QSocket structure contains required values
 // for performing a knock sequence with the QSRN gate.
@@ -159,7 +159,13 @@ func (qs *QSocket) Dial(useTls bool) error {
 		qs.conn = conn
 	}
 	if useTls {
-		qs.tlsConn = tls.Client(qs.conn, &tls.Config{InsecureSkipVerify: true})
+		qs.tlsConn = tls.Client(
+			qs.conn,
+			&tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         QSRN_GATE,
+			},
+		)
 		err := qs.VerifyTlsCertificate()
 		if err != nil {
 			return err
