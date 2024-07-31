@@ -65,6 +65,12 @@ type QSocket struct {
 // NewSocket creates a new QSocket structure with the given secret.
 // `certVerify` value is used for enabling the certificate validation on TLS connections
 func NewSocket(sType SocketType, secret string) *QSocket {
+	switch sType {
+	case Client, Server:
+	default:
+		panic("Invalid socket type!")
+	}
+
 	return &QSocket{
 		secret:      secret,
 		socketType:  sType,
