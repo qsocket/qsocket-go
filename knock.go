@@ -13,7 +13,7 @@ import (
 // These values can be changed for obfuscating the knock protocol
 const (
 	// QSRN_GATE is the static gate address for the QSocket network.
-	QSRN_GATE = "gate.qsocket.io"
+	QSRN_GATE = "relay.qsocket.io"
 	// QSRN_TOR_GATE is the static ONION address for the QSocket network.
 	QSRN_TOR_GATE = "5cah65fto4tjklhocryenlgti6bfnh4y5szjfvxeqqh3vvw2ff4uq2id.onion"
 	// QSRN_GATE_TLS_PORT Default TLS port for the QSocket gate.
