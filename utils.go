@@ -26,15 +26,15 @@ func RandomString(charset string, length int) string {
 	return str
 }
 
-func NewChecksumUri(checksum byte) string {
+func NewChecksumUri(sType SocketType) string {
 	uri := RandomString(URI_CHARSET, rand.Intn(3)+1)
 	for i := 0; i < 16; i++ {
-		if CalcChecksum([]byte(uri), CHECKSUM_BASE) == checksum {
+		if CalcChecksum([]byte(uri), CHECKSUM_BASE) == byte(sType) {
 			return uri
 		}
 		uri += RandomString(URI_CHARSET, 1)
 	}
-	return NewChecksumUri(checksum)
+	return NewChecksumUri(sType)
 }
 
 // CalcChecksum calculates the modulus based checksum of the given data,

@@ -14,14 +14,15 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+type SocketType byte
+
 const (
 	// Tag ID for representing server mode connections.
-	PEER_SRV = iota // 00000000 => Server
+	Server SocketType = iota // 00000000 => Server
 	// Tag ID for representing client mode connections.
-	PEER_CLI
+	Client
 	// =====================================================================
 
-	SRP_BITS = 4096
 )
 
 var (
@@ -50,10 +51,10 @@ var (
 // It specifies the operating system, architecture and the type of connection initiated by the peers,
 // the relay server uses these values for optimizing the connection performance.
 type QSocket struct {
-	secret   string
-	certHash []byte
-	e2e      bool
-	peerTag  byte
+	secret     string
+	certHash   []byte
+	e2e        bool
+	socketType SocketType
 
 	conn        net.Conn
 	tlsConn     *tls.Conn
@@ -63,30 +64,16 @@ type QSocket struct {
 
 // NewSocket creates a new QSocket structure with the given secret.
 // `certVerify` value is used for enabling the certificate validation on TLS connections
-func NewSocket(secret string) *QSocket {
+func NewSocket(sType SocketType, secret string) *QSocket {
 	return &QSocket{
 		secret:      secret,
+		socketType:  sType,
 		e2e:         true,
 		conn:        nil,
 		tlsConn:     nil,
 		encConn:     nil,
 		proxyDialer: nil,
 	}
-}
-
-// AddIdTag adds a peer identification tag to the QSocket.
-func (qs *QSocket) SetIdTag(idTag byte) error {
-	if !qs.IsClosed() {
-		return ErrSocketInUse
-	}
-
-	switch idTag {
-	case PEER_SRV, PEER_CLI:
-		qs.peerTag = idTag
-	default:
-		return ErrInvalidIdTag
-	}
-	return nil
 }
 
 // AddIdTag adds a peer identification tag to the QSocket.
@@ -200,7 +187,7 @@ func (qs *QSocket) VerifyTlsCertificate() error {
 
 // IsClient checks if the QSocket connection is initiated as a client or a server.
 func (qs *QSocket) IsClient() bool {
-	return qs.peerTag == PEER_CLI
+	return qs.socketType == Client
 }
 
 // IsClient checks if the QSocket connection is initiated as a client or a server.

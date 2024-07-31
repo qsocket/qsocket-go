@@ -54,7 +54,7 @@ func (qs *QSocket) DoWsProtocolSwitch() error {
 	}
 
 	uid := md5.Sum([]byte(qs.secret))
-	req := fmt.Sprintf("GET /%s HTTP/1.1\n", NewChecksumUri(qs.peerTag))
+	req := fmt.Sprintf("GET /%s HTTP/1.1\n", NewChecksumUri(qs.socketType))
 	req += fmt.Sprintf("Host: %s\n", QSRN_GATE)
 	req += fmt.Sprintf("User-Agent: %s\n", GetDeviceUserAgent())
 	req += "Sec-WebSocket-Version: 13\n"
