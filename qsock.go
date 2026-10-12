@@ -20,7 +20,6 @@ const (
 	// Tag ID for representing client mode connections.
 	Client
 	// =====================================================================
-
 )
 
 var (
@@ -36,7 +35,8 @@ var (
 	ErrSocketInUse            = errors.New("Socket already dialed.")
 	ErrInvalidCertFingerprint = errors.New("Invalid TLS certificate fingerprint.")
 	//
-	TOR_MODE = false
+	TOR_MODE      = false
+	QSRN_GATE_SNI = QSRN_GATE
 )
 
 type SocketType byte
@@ -138,14 +138,16 @@ func (qs *QSocket) SetProxy(proxyAddr string) error {
 // will be performed after establishing the TLS connection.
 func (qs *QSocket) Dial(useTls bool) error {
 	port := QSRN_GATE_PORT
+	gate := QSRN_GATE
+
 	if useTls {
 		port = QSRN_GATE_TLS_PORT
 	}
+	if TOR_MODE {
+		gate = QSRN_TOR_GATE
+	}
+
 	if qs.proxyDialer != nil {
-		gate := QSRN_GATE
-		if TOR_MODE {
-			gate = QSRN_TOR_GATE
-		}
 		pConn, err := qs.proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, port))
 		if err != nil {
 			return err
@@ -158,12 +160,13 @@ func (qs *QSocket) Dial(useTls bool) error {
 		}
 		qs.conn = conn
 	}
+
 	if useTls {
 		qs.tlsConn = tls.Client(
 			qs.conn,
 			&tls.Config{
-				InsecureSkipVerify: true,
-				ServerName:         QSRN_GATE,
+				// InsecureSkipVerify: true,
+				ServerName: QSRN_GATE_SNI,
 			},
 		)
 		err := qs.VerifyTlsCertificate()
@@ -171,7 +174,7 @@ func (qs *QSocket) Dial(useTls bool) error {
 			return err
 		}
 	}
-	return qs.InitiateKnockSequence()
+	return qs.InitKnockSequence()
 }
 
 func (qs *QSocket) VerifyTlsCertificate() error {
