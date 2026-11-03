@@ -12,7 +12,7 @@ const SRP_BITS = 4096
 
 // InitE2ECipher initiates the end-to-end encrypted stream with the given key.
 func (qs *QSocket) InitE2ECipher(key []byte) error {
-	if qs.tlsConn == nil { // We need a valid TLS connection for initiating PAKE for E2E.
+	if qs.IsClosed() { // The socket needs to be connected.
 		return ErrNoTlsConnection
 	}
 
