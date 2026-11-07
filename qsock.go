@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	Version                   = "?"
+	Version                   = "0.0.0"
 	ErrUntrustedCert          = errors.New("Certificate fingerprint mismatch!")
 	ErrUninitializedSocket    = errors.New("Socket not initiated,")
 	ErrQSocketSessionEnd      = errors.New("QSocket session has ended.")

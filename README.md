@@ -4,7 +4,6 @@ Go library for qsocket...
 
 ###### Documentation 
 [![GoDoc](https://godoc.org/github.com/qsocket/qsocket-go?status.svg)](http://godoc.org/github.com/qsocket/qsocket-go)
-[![Go Report Card](https://goreportcard.com/badge/github.com/qsocket/qs-netcat)](https://goreportcard.com/report/github.com/qsocket/qs-netcat)
 [![License: MIT](https://img.shields.io/github/license/qsocket/qsocket-go.svg)](https://raw.githubusercontent.com/qsocket/qsocket-go/master/LICENSE)
 
 

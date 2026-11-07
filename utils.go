@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const UserAgentTemplate = "Mozilla/5.0 (%s; %s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.3"
+const UserAgentTemplate = "Mozilla/5.0 (%s; %s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.%s Safari/537.36"
 
 func GetDeviceUserAgent() string {
 	return fmt.Sprintf(
