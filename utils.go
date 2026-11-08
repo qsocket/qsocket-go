@@ -18,6 +18,30 @@ func GetDeviceUserAgent() string {
 	)
 }
 
+// KnockRequest builds the WebSocket upgrade request sent to the QSRN gate.
+//
+// The headers are the ones Chrome sends for a WebSocket over HTTP/1.1, in
+// Chrome's order, which is fixed for every connection. Every line ends with
+// CRLF. The order is part of the traffic shape, do not sort or shuffle it.
+func KnockRequest(path, host, origin, userAgent, key string) string {
+	var b strings.Builder
+	b.WriteString("GET /" + path + " HTTP/1.1" + CRLF)
+	b.WriteString("Host: " + host + CRLF)
+	b.WriteString("Connection: Upgrade" + CRLF)
+	b.WriteString("Pragma: no-cache" + CRLF)
+	b.WriteString("Cache-Control: no-cache" + CRLF)
+	b.WriteString("User-Agent: " + userAgent + CRLF)
+	b.WriteString("Upgrade: websocket" + CRLF)
+	b.WriteString("Origin: " + origin + CRLF)
+	b.WriteString("Sec-WebSocket-Version: 13" + CRLF)
+	b.WriteString("Accept-Encoding: gzip, deflate, br, zstd" + CRLF)
+	b.WriteString("Accept-Language: en-US,en;q=0.9" + CRLF)
+	b.WriteString("Sec-WebSocket-Key: " + key + CRLF)
+	b.WriteString("Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits" + CRLF)
+	b.WriteString(CRLF)
+	return b.String()
+}
+
 func RandomString(charset string, length int) string {
 	str := ""
 	for i := 0; i < length; i++ {

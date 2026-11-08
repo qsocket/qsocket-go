@@ -1,13 +1,14 @@
 package qsocket
 
 import (
-	"bytes"
+	"bufio"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"net"
+	"strconv"
 	"time"
 
 	stream "github.com/qsocket/encrypted-stream"
@@ -23,7 +24,8 @@ const (
 )
 
 var (
-	Version                   = "0.0.0"
+	Version                   = "0.1.0"
+	ErrNoTransport            = errors.New("Socket transport is not initialized.")
 	ErrUntrustedCert          = errors.New("Certificate fingerprint mismatch!")
 	ErrUninitializedSocket    = errors.New("Socket not initiated,")
 	ErrQSocketSessionEnd      = errors.New("QSocket session has ended.")
@@ -51,16 +53,27 @@ type SocketType byte
 // It specifies the operating system, architecture and the type of connection initiated by the peers,
 // the relay server uses these values for optimizing the connection performance.
 type QSocket struct {
-	secret     string
-	certHash   []byte
-	e2e        bool
-	socketType SocketType
+	secret       string
+	certHash     []byte
+	insecureCert bool
+	e2e          bool
+	socketType   SocketType
 
 	conn        net.Conn
 	tlsConn     *tls.Conn
 	encConn     *stream.EncryptedStream
 	proxyDialer proxy.Dialer
+
+	// transport is the connection the knock and the session run over, the
+	// TLS connection when TLS is used and the TCP connection otherwise.
+	transport net.Conn
+	// reader buffers every read from the transport, see bufferedConn.
+	reader *bufio.Reader
 }
+
+// transportBufferSize is the size of the read buffer over the transport, it
+// holds a full TLS record.
+const transportBufferSize = 16 * 1024
 
 // NewSocket creates a new QSocket structure with the given secret.
 // `certVerify` value is used for enabling the certificate validation on TLS connections
@@ -92,7 +105,13 @@ func (qs *QSocket) SetE2E(v bool) error {
 	return nil
 }
 
-// AddIdTag adds a peer identification tag to the QSocket.
+// SetCertFingerprint pins the TLS certificate of the gate.
+//
+// h is the hex encoded SHA-256 hash of the SubjectPublicKeyInfo (SPKI) of the
+// gate's leaf certificate. When set, the pin replaces the CA validation: the
+// gate is accepted if and only if the public key of its certificate matches,
+// so gates with self signed certificates can be used. The TLS handshake
+// signature is still verified, so the gate must hold the matching private key.
 func (qs *QSocket) SetCertFingerprint(h string) error {
 	if !qs.IsClosed() {
 		return ErrSocketInUse
@@ -107,6 +126,19 @@ func (qs *QSocket) SetCertFingerprint(h string) error {
 	}
 
 	qs.certHash = hash
+	return nil
+}
+
+// SetInsecureCert disables the TLS certificate validation of the gate when no
+// certificate fingerprint is pinned. Any certificate is accepted, so the
+// identity of the gate is not checked at all. A pinned fingerprint takes
+// precedence over this setting.
+func (qs *QSocket) SetInsecureCert(v bool) error {
+	if !qs.IsClosed() {
+		return ErrSocketInUse
+	}
+
+	qs.insecureCert = v
 	return nil
 }
 
@@ -134,8 +166,9 @@ func (qs *QSocket) SetProxy(proxyAddr string) error {
 }
 
 // Dial creates a TLS connection to the `QSRN_GATE` on `QSRN_GATE_TLS_PORT`.
-// Based on the `VerifyCert` parameter, certificate fingerprint validation (a.k.a. SSL pinning)
-// will be performed after establishing the TLS connection.
+// The TLS handshake is completed before the knock sequence is sent, so a
+// certificate that fails the validation (or the pinned fingerprint, see
+// SetCertFingerprint) ends the connection before any knock byte is written.
 func (qs *QSocket) Dial(useTls bool) error {
 	port := QSRN_GATE_PORT
 	gate := QSRN_GATE
@@ -148,56 +181,76 @@ func (qs *QSocket) Dial(useTls bool) error {
 	}
 
 	if qs.proxyDialer != nil {
-		pConn, err := qs.proxyDialer.Dial("tcp", fmt.Sprintf("%s:%d", gate, port))
+		pConn, err := qs.proxyDialer.Dial("tcp", net.JoinHostPort(gate, strconv.Itoa(port)))
 		if err != nil {
 			return err
 		}
 		qs.conn = pConn
 	} else {
-		conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", QSRN_GATE, port))
+		conn, err := net.Dial("tcp", net.JoinHostPort(QSRN_GATE, strconv.Itoa(port)))
 		if err != nil {
 			return err
 		}
 		qs.conn = conn
 	}
 
+	qs.transport = qs.conn
 	if useTls {
-		qs.tlsConn = tls.Client(
-			qs.conn,
-			&tls.Config{
-				// InsecureSkipVerify: true,
-				ServerName: QSRN_GATE_SNI,
-			},
-		)
-		err := qs.VerifyTlsCertificate()
-		if err != nil {
+		qs.tlsConn = tls.Client(qs.conn, qs.tlsConfig())
+		if err := qs.tlsConn.Handshake(); err != nil {
+			qs.Close()
 			return err
 		}
+		qs.transport = qs.tlsConn
 	}
-	return qs.InitKnockSequence()
-}
+	qs.reader = bufio.NewReaderSize(qs.transport, transportBufferSize)
 
-func (qs *QSocket) VerifyTlsCertificate() error {
-	if qs.IsClosed() {
-		return ErrSocketNotConnected
-	}
-
-	if qs.tlsConn == nil {
-		return ErrNoTlsConnection
-	}
-
-	if qs.certHash == nil {
-		return nil
-	}
-
-	connState := qs.tlsConn.ConnectionState()
-	for _, peerCert := range connState.PeerCertificates {
-		hash := sha256.Sum256(peerCert.Raw)
-		if !bytes.Equal(hash[0:], qs.certHash) {
-			return ErrUntrustedCert
-		}
+	if err := qs.InitKnockSequence(); err != nil {
+		qs.Close()
+		return err
 	}
 	return nil
+}
+
+// tlsConfig returns the TLS client configuration of the socket.
+//
+// Without a pinned fingerprint or the insecure flag the gate certificate is
+// validated against the system roots, as usual.
+func (qs *QSocket) tlsConfig() *tls.Config {
+	conf := &tls.Config{
+		ServerName: QSRN_GATE_SNI,
+		// A browser opening a WebSocket over HTTP/1.1 offers this.
+		NextProtos: []string{"http/1.1"},
+	}
+
+	if qs.certHash != nil {
+		pin := qs.certHash
+		// The chain validation is turned off on purpose, the pinned
+		// fingerprint given by the user replaces it, which is what allows
+		// gates with self signed certificates. crypto/tls still verifies
+		// the handshake signature against the leaf certificate key, and
+		// VerifyConnection below only accepts the pinned key.
+		conf.InsecureSkipVerify = true
+		conf.VerifyConnection = func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return ErrUntrustedCert
+			}
+			hash := sha256.Sum256(cs.PeerCertificates[0].RawSubjectPublicKeyInfo)
+			if subtle.ConstantTimeCompare(hash[:], pin) != 1 {
+				return ErrUntrustedCert
+			}
+			return nil
+		}
+		return conf
+	}
+
+	if qs.insecureCert {
+		// The certificate validation is turned off on purpose, only on
+		// the explicit request of the user (--insecure-cert). The identity
+		// of the gate is not checked.
+		conf.InsecureSkipVerify = true
+	}
+	return conf
 }
 
 // IsClient checks if the QSocket connection is initiated as a client or a server.
@@ -281,6 +334,9 @@ func (qs *QSocket) Read(b []byte) (int, error) {
 	if qs.IsE2E() {
 		return qs.encConn.Read(b)
 	}
+	if qs.reader != nil {
+		return qs.reader.Read(b)
+	}
 	if qs.IsTLS() {
 		return qs.tlsConn.Read(b)
 	}
@@ -297,6 +353,9 @@ func (qs *QSocket) Read(b []byte) (int, error) {
 func (qs *QSocket) Write(b []byte) (int, error) {
 	if qs.IsE2E() {
 		return qs.encConn.Write(b)
+	}
+	if qs.transport != nil {
+		return qs.transport.Write(b)
 	}
 	if qs.tlsConn != nil {
 		return qs.tlsConn.Write(b)
@@ -321,6 +380,8 @@ func (qs *QSocket) Close() {
 	qs.conn = nil
 	qs.tlsConn = nil
 	qs.encConn = nil
+	qs.transport = nil
+	qs.reader = nil
 }
 
 // chanFromConn creates a channel from a Conn object, and sends everything it

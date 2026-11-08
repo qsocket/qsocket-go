@@ -13,7 +13,10 @@ const SRP_BITS = 4096
 // InitE2ECipher initiates the end-to-end encrypted stream with the given key.
 func (qs *QSocket) InitE2ECipher(key []byte) error {
 	if qs.IsClosed() { // The socket needs to be connected.
-		return ErrNoTlsConnection
+		return ErrSocketNotConnected
+	}
+	if qs.transport == nil || qs.reader == nil {
+		return ErrNoTransport
 	}
 
 	cipher, err := estream.NewAESGCMCipher(key)
@@ -27,8 +30,12 @@ func (qs *QSocket) InitE2ECipher(key []byte) error {
 		DisableNonceVerification: true, // This is nessesary because we don't really know who (client/server) speaks first on the relay connection.
 	}
 
-	// Create an encrypted stream from a conn.
-	encryptedConn, err := estream.NewEncryptedStream(qs.tlsConn, config)
+	// Create an encrypted stream over the transport (TLS or plain TCP),
+	// reading through the same buffer as the knock and SRP messages.
+	encryptedConn, err := estream.NewEncryptedStream(
+		&bufferedConn{Conn: qs.transport, reader: qs.reader},
+		config,
+	)
 	if err != nil {
 		return err
 	}
@@ -55,6 +62,11 @@ func (qs *QSocket) InitClientSRP() ([]byte, error) {
 	}
 
 	// client credentials (public key and identity) to send to server
+	//
+	// Every SRP message is sent with a single Write and read with a single
+	// Read: the messages carry no length prefix, the exchange relies on each
+	// one arriving as one TLS record (see DoWsProtocolSwitch for the bytes
+	// that arrive together with the protocol switch response).
 	creds := c.Credentials()
 
 	// Send the creds ro server
