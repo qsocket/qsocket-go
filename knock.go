@@ -64,6 +64,17 @@ var (
 // Sec-WebSocket-Key: fTZr3JpRgUwbDNAMdJvyRg==  <-- base64 encoded UID here
 // Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits
 
+// NextUID returns the UID following uid on its chain, md5(uid).
+//
+// Every UID with a session already established on it continues with the next
+// one: a listening peer moves on to NextUID of its UID once a session opens
+// there, so a later listener with the same secret cannot collide with it, and
+// the relay sends a connecting peer down the same chain, past every UID with an
+// ongoing session, to the first one a listener may be waiting on.
+func NextUID(uid [16]byte) [16]byte {
+	return md5.Sum(uid[:])
+}
+
 // knockHost returns the gate name carried in the Host and Origin headers,
 // the gate actually dialed, with the port only when it is not the default one
 // of the transport.
@@ -105,7 +116,7 @@ func (qs *QSocket) DoWsProtocolSwitch() error {
 		return ErrSocketNotConnected
 	}
 
-	uid := md5.Sum([]byte(qs.secret))
+	uid := qs.uid
 	host := qs.knockHost()
 	req := KnockRequest(
 		NewChecksumUri(qs.socketType),

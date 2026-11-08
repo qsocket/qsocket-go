@@ -2,6 +2,7 @@ package qsocket
 
 import (
 	"bufio"
+	"crypto/md5"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
@@ -53,7 +54,10 @@ type SocketType byte
 // It specifies the operating system, architecture and the type of connection initiated by the peers,
 // the relay server uses these values for optimizing the connection performance.
 type QSocket struct {
-	secret       string
+	secret string
+	// uid is the identifier carried in the knock, md5(secret) unless it is
+	// overridden with SetUID. The SRP handshake always uses the secret.
+	uid          [16]byte
 	certHash     []byte
 	insecureCert bool
 	e2e          bool
@@ -86,6 +90,7 @@ func NewSocket(sType SocketType, secret string) *QSocket {
 
 	return &QSocket{
 		secret:      secret,
+		uid:         md5.Sum([]byte(secret)),
 		socketType:  sType,
 		e2e:         true,
 		conn:        nil,
@@ -93,6 +98,24 @@ func NewSocket(sType SocketType, secret string) *QSocket {
 		encConn:     nil,
 		proxyDialer: nil,
 	}
+}
+
+// UID returns the 16 byte identifier the socket knocks with.
+func (qs *QSocket) UID() [16]byte {
+	return qs.uid
+}
+
+// SetUID overrides the identifier the socket knocks with, md5(secret) by
+// default. The SRP handshake keeps using the secret, so both peers still
+// authenticate each other with it. A listening peer uses this to move down
+// the UID chain (see NextUID) once a session is established on its UID.
+func (qs *QSocket) SetUID(uid [16]byte) error {
+	if !qs.IsClosed() {
+		return ErrSocketInUse
+	}
+
+	qs.uid = uid
+	return nil
 }
 
 // AddIdTag adds a peer identification tag to the QSocket.

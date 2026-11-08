@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -535,5 +537,46 @@ func TestTorKnockHost(t *testing.T) {
 	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 	if h := headerValue(<-reqCh, "Host"); h != "example.onion:"+port {
 		t.Fatalf("Host = %q, want the onion gate", h)
+	}
+}
+
+func TestKnockCarriesUID(t *testing.T) {
+	secret := "example-secret"
+	base := md5.Sum([]byte(secret))
+	next := qsocket.NextUID(base)
+	if want := md5.Sum(base[:]); next != want {
+		t.Fatalf("NextUID = %x, want md5(uid) %x", next, want)
+	}
+
+	for _, tc := range []struct {
+		name string
+		set  bool
+		want [16]byte
+	}{
+		{"default md5(secret)", false, base},
+		{"chained md5(uid)", true, next},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ln := listen(t)
+			useGate(t, ln)
+			reqCh := serveOnce(t, ln, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
+			qs := qsocket.NewSocket(qsocket.Server, secret)
+			qs.SetE2E(false)
+			if tc.set {
+				if err := qs.SetUID(next); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if qs.UID() != tc.want {
+				t.Fatalf("UID() = %x, want %x", qs.UID(), tc.want)
+			}
+			if err := qs.Dial(false); !errors.Is(err, qsocket.ErrPeerNotFound) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			key := headerValue(<-reqCh, "Sec-WebSocket-Key")
+			if want := base64.StdEncoding.EncodeToString(tc.want[:]); key != want {
+				t.Fatalf("knock key = %q, want %q", key, want)
+			}
+		})
 	}
 }
